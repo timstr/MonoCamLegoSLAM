@@ -1,0 +1,6 @@
+*.swp
+*.swo
+bin
+obj
+build
+.vscode
