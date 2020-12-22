@@ -53,7 +53,7 @@ def extract_line_tag(line_segment, image):
     assert out.shape == (image_patch_size, image_patch_size)
     return out
 
-sse_threshold=1500
+sse_threshold=500
 
 def find_matching_tags(tags_a, tags_b):
     matches = []
@@ -190,10 +190,13 @@ def createLandmarkDatabase(taggedLines, robotPoses):
             if findLandmarkLocation(nextTags[nextId], lmdb) is not None:
                 continue
             rx, ry, rtheta = robotPose
+            d = 100.0
+            dx = d * math.cos(rtheta)
+            dy = d * math.sin(rtheta)
             lmdb.append((
                 prevTags[prevId],
-                torch.tensor([rx, ry, 0.0], requires_grad=True),
-                torch.tensor([rx, ry, 500.0], requires_grad=True)
+                torch.tensor([rx + dx, ry + dy, 0.0], requires_grad=True),
+                torch.tensor([rx + dx, ry + dy, 500.0], requires_grad=True)
             ))
 
         prevTaggedLines = nextTaggedLines
@@ -211,6 +214,9 @@ def distanceFromLine2D(p0x, p0y, p1x, p1y, qx, qy):
     distSqr = (qx - (p0x + h * dx))**2 + (qy - (p0y + h * dy))**2
     # return distSqr
     return torch.sqrt(distSqr)
+
+def distanceFromPoint2D(px, py, qx, qy):
+    return torch.sqrt((px - qx)**2 + (py - qy)**2)
 
 # TODO: landmark alignment
 # inputs:
@@ -280,6 +286,8 @@ def landmarkAlignmentErrorFn(listOfPosesAndSegments, landmarkDatabase):
                 lm_p1_x, lm_p1_y = projectFromWorldToCameraPlane(robotX, robotY, robotTheta, lm_p1)
                 dist_p0 = distanceFromLine2D(p0x, p0y, p1x, p1y, lm_p0_x, lm_p0_y)
                 dist_p1 = distanceFromLine2D(p0x, p0y, p1x, p1y, lm_p1_x, lm_p1_y)
+                # dist_p0 = distanceFromPoint2D(p0x, p0y, lm_p0_x, lm_p0_y)
+                # dist_p1 = distanceFromPoint2D(p1x, p1y, lm_p1_x, lm_p1_y)
                 # TODO: constraint to encourage non-zero distance between landmark endpoints
                 return dist_p0 + dist_p1
             terms.append(errTerm)

@@ -81,11 +81,11 @@ namespace {
      * 0 -> the angles are perfectly parallel
      * 1 -> the angles are perfectly orthogonal
      * The cost is piecewise linear in both angles
-     * NOTE: the orthogonal angle cost is given by 1.0 - parallelAngleCost
+     * NOTE: the orthogonal angle cost is given by pi/2 - parallelAngleCost
      */
     double parallelAngleCost(double theta1, double theta2) noexcept {
         auto d = (theta1 - theta2) / pi;
-        return 2.0 * std::abs(d - std::floor(d + 0.5));
+        return pi * std::abs(d - std::floor(d + 0.5));
     }
 
 } // anonymous namespace
@@ -184,7 +184,7 @@ double estimateVanishingPoint(const std::vector<LineSegment>& tentativeLines, co
             assert(ithLabel == SegmentLabel::VanishingPoint1 || ithLabel == SegmentLabel::VanishingPoint2);
 
             const auto para = parallelAngleCost(ithAngle, segAngle);
-            const auto ortho = 1.0 - para;
+            const auto ortho = 0.5 * pi - para;
 
             if (newLabel == ithLabel) {
                 // If ithLabel belongs to a VP and segment joined that VP, add parallel cost
