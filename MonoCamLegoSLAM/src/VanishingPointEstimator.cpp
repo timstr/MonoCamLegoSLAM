@@ -38,7 +38,7 @@ namespace {
     /**
      * Given a line segment in an image, returns the angle (in radians) to the point on the horizon
      * where that segment's projection intersects the horizon. The angle returned is computed from
-     * the point of intersection to a point that is 1 unit away. This acts like a Gnomic projection
+     * the point of intersection to a point that is 1 unit away. This acts like a Gnomonic projection
      * in 1D, and extends the real number line to include +/- infinity which are used when line
      * segments are parallel to the horizon.
      * The returned angle is 0 at the center, positive to the right, and negative to the left,
@@ -70,7 +70,7 @@ namespace {
         return theta - pi * std::floor(theta / pi + 0.5);
     }
 
-    constexpr auto angularThreshold = pi * 0.1;
+    constexpr auto angularThreshold = pi * 0.2;
 
     constexpr auto outlierCost = angularThreshold;
 
@@ -84,11 +84,8 @@ namespace {
      * NOTE: the orthogonal angle cost is given by 1.0 - parallelAngleCost
      */
     double parallelAngleCost(double theta1, double theta2) noexcept {
-        theta1 /= pi;
-        theta2 /= pi;
-        theta1 -= std::floor(theta1);
-        theta2 -= std::floor(theta2);
-        return std::abs(theta1 - theta2);
+        auto d = (theta1 - theta2) / pi;
+        return 2.0 * std::abs(d - std::floor(d + 0.5));
     }
 
 } // anonymous namespace
@@ -103,13 +100,25 @@ double estimateVanishingPoint(const std::vector<LineSegment>& tentativeLines, co
     labels.reserve(tentativeLines.size());
     lines.reserve(tentativeLines.size());
 
+    // TODO: remove after debugging
+    auto vertical = std::vector<LineSegment>{};
+
     for (const auto& tls : tentativeLines) {
+        const auto dx = tls.p1.x - tls.p0.x;
+        const auto dy = tls.p1.y - tls.p0.y;
+
         // Discard near-vertical segments
-        const auto segmentAngle = std::atan2(tls.p1.y - tls.p0.y, tls.p1.x - tls.p0.x);
-        const auto angleFromPositiveY = std::abs(0.5 * pi - segmentAngle);
-        const auto angleFromNegativeY = std::abs(1.5 * pi - segmentAngle);
-        const auto angleFromVertical = std::min(angleFromPositiveY, angleFromNegativeY);
-        if (angleFromVertical < angularThreshold) {
+        auto segmentAngle = std::atan2(dy, dx);
+        segmentAngle /= pi;
+        segmentAngle = std::abs(segmentAngle + 0.5 - std::floor(segmentAngle + 1.0));
+        segmentAngle *= pi;
+        if (segmentAngle < angularThreshold) {
+            vertical.push_back(tls);
+            continue;
+        }
+
+        // Discard short segments
+        if (std::hypot(dx, dy) < 15.0) {
             continue;
         }
 
@@ -215,42 +224,94 @@ double estimateVanishingPoint(const std::vector<LineSegment>& tentativeLines, co
         const auto newLabel = static_cast<SegmentLabel>(newLabelIdx);
         auto deltaCost = changeInCost(i, newLabel);
         // as T tends to zero, P must tend to zero if e_new > e and to a positive value otherwise
-        const auto x = std::exp(-10.0 * deltaCost);
-        const auto eps = 0.1;
-        const auto P = (T * (1.0 - eps) + eps) * x / (1.0 + x);
+
+        const auto d = 1.0 * T * T * T;
+        const auto s = 7.5;
+
+        const auto x = std::exp(-s * deltaCost);
+        const auto P = d + ((1.0 - d) * x / (1.0 + x));
         assertWithContext(P >= -1e6 && P <= (1.0 + 1e-6), P, T, deltaCost, x);
         if (P > randProb(prng)) {
             labels[i] = newLabel;
             netCostChange += deltaCost;
         }
+
+        // std::cout << netCostChange << '\n';
     }
+    
+    // Visualize line segments
+    // TODO: remove after testing
+    // {
+    //     auto vp1 = std::vector<LineSegment>{};
+    //     auto vp2 = std::vector<LineSegment>{};
+    //     auto outliers = std::vector<LineSegment>{};
+    //     for (std::size_t i = 0; i < lines.size(); ++i) {
+    //         const auto lbl = labels[i];
+    //         const auto& seg = lines[i];
+    //         if (lbl == SegmentLabel::VanishingPoint1) {
+    //             vp1.push_back(seg);
+    //         } else if (lbl == SegmentLabel::VanishingPoint2) {
+    //             vp2.push_back(seg);
+    //         } else if (lbl == SegmentLabel::Outlier) {
+    //             outliers.push_back(seg);
+    //         }
+    //     }
+        
+    //     auto img = Image{176, 144};
+
+    //     renderLines(tentativeLines, img);
+    //     save_ppm(img, "../temp_all.ppm");
+
+    //     renderLines(vertical, img);
+    //     save_ppm(img, "../temp_vertical.ppm");
+        
+    //     renderLines(vp1, img);
+    //     save_ppm(img, "../temp_vp1.ppm");
+
+    //     renderLines(vp2, img);
+    //     save_ppm(img, "../temp_vp2.ppm");
+
+    //     renderLines(outliers, img);
+    //     save_ppm(img, "../temp_outliers.ppm");
+    // }
 
     // Find the VP with the most assigned line segments, and find its average
     auto nVP1 = std::size_t{0};
     auto nVP2 = std::size_t{0};
-    auto sumVP1 = 0.0;
-    auto sumVP2 = 0.0;
+    auto sumVP1 = Point2D{};
+    auto sumVP2 = Point2D{};
     for (std::size_t i = 0; i < lines.size(); ++i) {
         const auto lbl = labels[i];
+        const auto theta = horizonAngles[i] * 2.0;
         if (lbl == SegmentLabel::VanishingPoint1) {
             ++nVP1;
-            sumVP1 += horizonAngles[i];
+            sumVP1.x += std::cos(theta);
+            sumVP1.y += std::sin(theta);
         } else if (lbl == SegmentLabel::VanishingPoint2) {
             ++nVP2;
-            sumVP2 += horizonAngles[i];
+            sumVP2.x += std::cos(theta);
+            sumVP2.y += std::sin(theta);
         }
     }
-    
+
     const auto moveToRightQuadrant = [](double theta) noexcept {
         const auto t = theta / (0.5 * pi);
         return 0.5 * pi * (t - std::floor(t));
     };
 
     if (nVP1 >= nVP2 && nVP1 >= minSegments) {
-        const auto theta = sumVP1 / static_cast<double>(nVP1);
+        const auto n = static_cast<double>(nVP1);
+        const auto theta = 0.5 * std::atan2(
+            sumVP1.y / n,
+            sumVP1.x / n
+        );
         return moveToRightQuadrant(theta);
     } else if (nVP2 > nVP1 && nVP2 >= minSegments) {
-        const auto theta = sumVP2 / static_cast<double>(nVP2);
+        const auto n = static_cast<double>(nVP2);
+        const auto theta = 0.5 * std::atan2(
+            sumVP2.y / n,
+            sumVP2.x / n
+        );
         return moveToRightQuadrant(theta);
     }
     return std::numeric_limits<double>::quiet_NaN();

@@ -1,4 +1,5 @@
 #include <Camera.hpp>
+#include <Assert.hpp>
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -12,7 +13,6 @@
 
 #include <linux/videodev2.h>
 
-#include <cassert>
 #include <iostream>
 #include <utility>
 

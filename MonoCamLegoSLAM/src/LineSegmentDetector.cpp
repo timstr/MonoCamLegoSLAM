@@ -53,6 +53,8 @@ std::vector<LineSegment> detectLines(const Image& img, double minLength) {
         });
     }
 
+    std::free(segments_raw);
+
     return out;
 }
 

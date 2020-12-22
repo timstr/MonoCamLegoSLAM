@@ -2,5 +2,5 @@
 *.swo
 bin
 obj
-build
+build*
 .vscode
